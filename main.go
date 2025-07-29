@@ -10,23 +10,15 @@ import (
 	rl "github.com/gen2brain/raylib-go/raylib"
 
 	"flow/navigation"
+	"flow/systems"
 )
-
-// Unit represents an animated agent that follows the flow field
-type Unit struct {
-	Position  rl.Vector2 // Current position in pixels
-	GridPos   rl.Vector2 // Current grid cell position (as floats for easier conversion)
-	TargetPos rl.Vector2 // Target position for smooth movement
-	Moving    bool       // Whether the unit is currently moving
-}
 
 // Graphics constants for raylib visualization
 const (
-	cellSize  = 50  // Size of each grid cell in pixels
-	marginX   = 30  // Left/right margin
-	marginY   = 30  // Top/bottom margin
-	fontSize  = 24  // Font size for arrows
-	unitSpeed = 2.0 // Unit movement speed (pixels per frame)
+	cellSize = 50 // Size of each grid cell in pixels
+	marginX  = 30 // Left/right margin
+	marginY  = 30 // Top/bottom margin
+	fontSize = 24 // Font size for arrows
 )
 
 var (
@@ -39,6 +31,8 @@ var (
 
 	// Navigation system
 	navigator *navigation.FlowFieldNavigator
+	// Enemy system
+	enemySystem *systems.EnemySystem
 )
 
 func main() {
@@ -66,48 +60,32 @@ func main() {
 	// Set target FPS for smooth rendering
 	rl.SetTargetFPS(60)
 
-	units := make([]*Unit, 0)
-
-	// Initialize unit at bottom left corner
-	for i := range 2000 {
-		unit := &Unit{
-			GridPos: rl.Vector2{X: 0, Y: float32(Height - 1)},
-			Moving:  false,
-		}
-		// Set initial pixel position
-		unit.Position = rl.Vector2{
-			X: float32(
-				marginX,
-			) + unit.GridPos.X*float32(
-				cellSize,
-			) + float32(
-				cellSize,
-			)/2 + float32(
-				i,
-			),
-			Y: float32(
-				marginY,
-			) + unit.GridPos.Y*float32(
-				cellSize,
-			) + float32(
-				cellSize,
-			)/2 + float32(
-				i,
-			),
-		}
-		unit.TargetPos = unit.Position
-		units = append(units, unit)
+	// Initialize enemy system
+	enemyConfig := systems.Config{
+		Width:            Width,
+		Height:           Height,
+		CellSize:         cellSize,
+		MarginX:          marginX,
+		MarginY:          marginY,
+		UnitSpeed:        2.0,
+		SeparationRadius: 15.0,
+		SeparationForce:  10.0,
+		AlignmentRadius:  25.0,
+		AlignmentForce:   0.3,
+		CohesionRadius:   35.0,
+		CohesionForce:    0.2,
+		MaxSteerForce:    0.8,
 	}
+	enemySystem = systems.NewEnemySystem(navigator, enemyConfig)
+	enemySystem.SpawnEnemies(100)
 
 	// Main rendering loop
 	for !rl.WindowShouldClose() {
 		// Handle mouse input for goal placement
 		handleMouseInput()
 
-		for _, u := range units {
-			// Update unit movement
-			updateUnit(u)
-		}
+		// Update all enemies with steering behaviors
+		enemySystem.Update()
 
 		// Begin drawing phase
 		rl.BeginDrawing()
@@ -116,10 +94,8 @@ func main() {
 		// Draw the flow field grid
 		drawFlowField()
 
-		// Draw the moving unit
-		for _, u := range units {
-			drawUnit(u)
-		}
+		// Draw all enemies
+		enemySystem.Draw()
 
 		// End drawing phase
 		rl.DrawFPS(10, 10)
@@ -171,85 +147,6 @@ func handleMouseInput() {
 	}
 }
 
-// updateUnit handles the unit's movement logic following the flow field
-func updateUnit(unit *Unit) {
-	currentGoal := navigator.GetGoal()
-
-	// Check if unit has reached the goal
-	if int(unit.GridPos.X) == currentGoal.X && int(unit.GridPos.Y) == currentGoal.Y {
-		// Reset unit to bottom left to restart the journey
-		unit.GridPos = rl.Vector2{X: 0, Y: float32(Height - 1)}
-		unit.Position = rl.Vector2{
-			X: float32(marginX) + unit.GridPos.X*float32(cellSize) + float32(cellSize)/2,
-			Y: float32(marginY) + unit.GridPos.Y*float32(cellSize) + float32(cellSize)/2,
-		}
-		unit.TargetPos = unit.Position
-		unit.Moving = false
-		return
-	}
-
-	// If not currently moving, start moving to next cell
-	if !unit.Moving {
-		// Get flow direction from current cell
-		currentPos := navigation.Position{X: int(unit.GridPos.X), Y: int(unit.GridPos.Y)}
-		flowDir, err := navigator.GetFlowDirection(currentPos)
-		if err != nil {
-			// No path available, stay put
-			return
-		}
-
-		// Skip if no flow direction (shouldn't happen in a proper flow field)
-		if flowDir.X == 0 && flowDir.Y == 0 {
-			return
-		}
-
-		// Calculate next grid position
-		nextGridX := int(unit.GridPos.X) + flowDir.X
-		nextGridY := int(unit.GridPos.Y) + flowDir.Y
-
-		// Bounds check
-		if nextGridX >= 0 && nextGridX < Width && nextGridY >= 0 && nextGridY < Height {
-			// Set target position for smooth movement
-			unit.TargetPos = rl.Vector2{
-				X: float32(marginX + nextGridX*cellSize + cellSize/2),
-				Y: float32(marginY + nextGridY*cellSize + cellSize/2),
-			}
-			unit.Moving = true
-		}
-	}
-
-	// Handle smooth movement towards target
-	if unit.Moving {
-		// Calculate direction to target
-		dx := unit.TargetPos.X - unit.Position.X
-		dy := unit.TargetPos.Y - unit.Position.Y
-		distance := rl.Vector2Length(rl.Vector2{X: dx, Y: dy})
-
-		// If close enough to target, snap to it and update grid position
-		if distance < unitSpeed {
-			unit.Position = unit.TargetPos
-			unit.GridPos.X = (unit.Position.X - float32(marginX) - float32(cellSize)/2) / float32(
-				cellSize,
-			)
-			unit.GridPos.Y = (unit.Position.Y - float32(marginY) - float32(cellSize)/2) / float32(
-				cellSize,
-			)
-			unit.Moving = false
-		} else {
-			// Move towards target
-			unit.Position.X += (dx / distance) * unitSpeed
-			unit.Position.Y += (dy / distance) * unitSpeed
-		}
-	}
-}
-
-// drawUnit renders the moving unit as a red circle
-func drawUnit(unit *Unit) {
-	// Draw unit as a red circle with black outline
-	rl.DrawCircle(int32(unit.Position.X), int32(unit.Position.Y), 8, rl.Red)
-	rl.DrawCircleLines(int32(unit.Position.X), int32(unit.Position.Y), 8, rl.Black)
-}
-
 // drawFlowField renders the entire flow field grid using raylib
 func drawFlowField() {
 	// Draw grid background and cell borders
@@ -276,8 +173,8 @@ func drawFlowField() {
 				rl.DrawText("GOAL", cellX+(int32(cellSize)-textWidth)/2, cellY+int32(cellSize)/2-int32(fontSize/4), int32(fontSize/2), rl.Black)
 			} else {
 				// Draw flow arrow for navigable cells
-				// direction := grid.FlowField[y][x]
-				// drawFlowArrow(cellX, cellY, direction)
+				direction := grid.FlowField[y][x]
+				drawFlowArrow(cellX, cellY, direction)
 			}
 		}
 	}
