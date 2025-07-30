@@ -17,6 +17,7 @@ const (
 	Passable CellType = iota
 	Obstacle
 	Goal
+	Building
 )
 
 // Standard direction sets for different movement patterns
@@ -48,6 +49,7 @@ type Grid struct {
 	Costs         [][]int  // -1 for obstacles, positive values for movement cost
 	FlowField     [][]Direction
 	Distances     [][]int
+	CellTypes     [][]CellType
 }
 
 // NewGrid creates a new navigation grid with the specified dimensions
@@ -58,6 +60,7 @@ func NewGrid(width, height int) *Grid {
 		Costs:     make([][]int, height),
 		FlowField: make([][]Direction, height),
 		Distances: make([][]int, height),
+		CellTypes: make([][]CellType, height),
 	}
 
 	// Initialize all slices
@@ -65,10 +68,12 @@ func NewGrid(width, height int) *Grid {
 		grid.Costs[y] = make([]int, width)
 		grid.FlowField[y] = make([]Direction, width)
 		grid.Distances[y] = make([]int, width)
+		grid.CellTypes[y] = make([]CellType, width)
 		
 		// Initialize with passable terrain (cost = 1)
 		for x := 0; x < width; x++ {
 			grid.Costs[y][x] = 1
+			grid.CellTypes[y][x] = Passable
 		}
 	}
 
@@ -94,6 +99,17 @@ func (g *Grid) SetObstacle(pos Position) error {
 		return ErrInvalidPosition
 	}
 	g.Costs[pos.Y][pos.X] = -1
+	g.CellTypes[pos.Y][pos.X] = Obstacle
+	return nil
+}
+
+// SetBuilding marks a position as a building
+func (g *Grid) SetBuilding(pos Position) error {
+	if !g.IsValidPosition(pos) {
+		return ErrInvalidPosition
+	}
+	g.Costs[pos.Y][pos.X] = -1
+	g.CellTypes[pos.Y][pos.X] = Building
 	return nil
 }
 

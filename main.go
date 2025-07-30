@@ -33,6 +33,10 @@ var (
 	navigator *navigation.FlowFieldNavigator
 	// Enemy system
 	enemySystem *systems.EnemySystem
+	// Turret system
+	turretSystem *systems.TurretSystem
+	// Building system
+	buildingSystem *systems.BuildingSystem
 )
 
 func main() {
@@ -74,18 +78,30 @@ func main() {
 		AlignmentForce:   0.3,
 		CohesionRadius:   35.0,
 		CohesionForce:    0.2,
-		MaxSteerForce:    0.8,
+		MaxSteerForce:    0.6,
 	}
 	enemySystem = systems.NewEnemySystem(navigator, enemyConfig)
 	enemySystem.SpawnEnemies(100)
+
+	// Initialize turret system
+	turretSystem = systems.NewTurretSystem(enemySystem, enemyConfig)
+
+	// Initialize building system
+	buildingSystem = systems.NewBuildingSystem(navigator, turretSystem, enemyConfig)
 
 	// Main rendering loop
 	for !rl.WindowShouldClose() {
 		// Handle mouse input for goal placement
 		handleMouseInput()
 
+		// Handle keyboard input for building placement
+		handleKeyboardInput()
+
 		// Update all enemies with steering behaviors
 		enemySystem.Update()
+		
+		// Update turret system to check for enemies in range
+		turretSystem.Update()
 
 		// Begin drawing phase
 		rl.BeginDrawing()
@@ -93,6 +109,9 @@ func main() {
 
 		// Draw the flow field grid
 		drawFlowField()
+
+		// Draw buildings
+		buildingSystem.Draw()
 
 		// Draw all enemies
 		enemySystem.Draw()
@@ -119,6 +138,7 @@ func setupObstacles() {
 		for y := 4; y <= 6; y++ {
 			if x < Width && y < Height {
 				costs[y][x] = -1 // Mark as obstacle
+				grid.SetObstacle(navigation.Position{X: x, Y: y})
 			}
 		}
 	}
@@ -144,6 +164,18 @@ func handleMouseInput() {
 			// Goal is invalid (out of bounds or obstacle), ignore click
 			return
 		}
+	}
+}
+
+// handleKeyboardInput checks for spacebar press to place buildings
+func handleKeyboardInput() {
+	if rl.IsKeyPressed(rl.KeySpace) {
+		mousePos := rl.GetMousePosition()
+
+		gridX := int((mousePos.X - float32(marginX)) / float32(cellSize))
+		gridY := int((mousePos.Y - float32(marginY)) / float32(cellSize))
+
+		buildingSystem.PlaceBuilding(gridX, gridY)
 	}
 }
 
